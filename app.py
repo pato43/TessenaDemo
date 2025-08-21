@@ -1,12 +1,11 @@
 # app.py
-# Entrevista clínica simulada (ES-MX) — Tema claro/oscuro, selección robusta, chat paso a paso y reporte dinámico.
-# Sin conexión a LLM. Flujo: Selección → Introducción → Conversación → Reporte.
+# Agente de preconsulta (ES-MX) — tema adaptable a claro/oscuro por sistema, chat paso a paso y reporte dinámico
+# Sin audio, sin LLM, sin selector de tema. Flujo: Selección → Introducción → Conversación → Reporte.
 
 import streamlit as st
 from dataclasses import dataclass
 from typing import List, Dict, Tuple
 from datetime import datetime
-from pathlib import Path
 import time
 
 # =========================
@@ -24,31 +23,30 @@ if "chat_idx" not in st.session_state:
     st.session_state.chat_idx = -1
 if "autoplay" not in st.session_state:
     st.session_state.autoplay = False
-if "audio_url" not in st.session_state:
-    st.session_state.audio_url = ""
 
 # =========================
-# THEME
+# THEME (auto claro/oscuro por sistema)
 # =========================
-THEME = st.sidebar.radio("Tema", ["Claro", "Oscuro"], index=0)
-
-base_css = """
+st.markdown("""
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
 <style>
+/* Variables por defecto (claro) */
 :root{
-  --bg: %(bg)s;
-  --card: %(card)s;
-  --text: %(text)s;
-  --muted: %(muted)s;
-  --primary: #7c3aed;
-  --accent: #22d3ee;
-  --accent2:#6EE7F9;
-  --border: %(border)s;
-  --chipbg: %(chipbg)s;
-  --chipfg: %(chipfg)s;
-  --agent: %(agent)s;
-  --patient: %(patient)s;
+  --bg:#f7f8fb; --card:#ffffff; --text:#0f172a; --muted:#6b7280;
+  --primary:#7c3aed; --accent:#22d3ee; --accent2:#6EE7F9;
+  --border:#e5e7eb; --chipbg:#eef2ff; --chipfg:#4f46e5;
+  --agent:#eef2ff; --patient:#f3f4f6;
 }
+/* Overrides para oscuro */
+@media (prefers-color-scheme: dark) {
+  :root{
+    --bg:#0B1220; --card:#11182A; --text:#EAF2FF; --muted:#9EB0CC;
+    --border:#203049; --chipbg:#0f1a2c; --chipfg:#8ab6ff;
+    --agent:#0f1a2c; --patient:#0F172A;
+  }
+}
+
+/* Base */
 html, body, [class*="css"]{
   background: var(--bg) !important;
   color: var(--text) !important;
@@ -60,7 +58,6 @@ header{ visibility: hidden; }
 
 /* Cards y secciones */
 .card{ background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px; }
-.card.soft{ background:rgba(255,255,255,.5); }
 .section{ border:none; height:1px; background:linear-gradient(90deg,var(--primary),var(--accent)); margin:10px 0 14px; }
 
 /* Chips y badges */
@@ -97,20 +94,7 @@ header{ visibility: hidden; }
 
 .small{ color:var(--muted); font-size:.92rem; }
 </style>
-"""
-
-if THEME == "Claro":
-    st.markdown(base_css % dict(
-        bg="#f7f8fb", card="#ffffff", text="#0f172a", muted="#6b7280",
-        border="#e5e7eb", chipbg="#eef2ff", chipfg="#4f46e5",
-        agent="#eef2ff", patient="#f3f4f6"
-    ), unsafe_allow_html=True)
-else:
-    st.markdown(base_css % dict(
-        bg="#0B1220", card="#11182A", text="#EAF2FF", muted="#9EB0CC",
-        border="#203049", chipbg="#0f1a2c", chipfg="#8ab6ff",
-        agent="#0f1a2c", patient="#0F172A"
-    ), unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 # =========================
 # DATA
@@ -229,7 +213,7 @@ def get_condition_script(cid: str) -> Tuple[List[Dict], List[Tuple[int,str,str]]
         {"role":"agent","text":"Vamos a registrar tu cuadro febril. ¿Fiebre con escalofríos intermitentes?"},
         {"role":"patient","text":"Sí, viene y va con sudoraciones."},
         {"role":"agent","text":"¿Has viajado recientemente a zona endémica?"},
-        {"role":"patient","text":"Sí, estuve en Chiapas zona selvática hace 2 semanas."},
+        {"role":"patient","text":"Sí, estuve en zona selvática hace 2 semanas."},
         {"role":"agent","text":"¿Dolor de cabeza, náusea o dolor muscular?"},
         {"role":"patient","text":"Dolor de cabeza y cuerpo cortado."},
         {"role":"agent","text":"¿Tomas profilaxis antipalúdica?"},
@@ -250,7 +234,6 @@ def get_condition_script(cid: str) -> Tuple[List[Dict], List[Tuple[int,str,str]]
     return chat, rules, faltantes
 
 EHR_BASE = {
-    # Se añade al reporte siempre
     "Historia clínica relevante": ["Antecedente crónico declarado en ficha de paciente"],
     "Medicaciones (EHR)": ["Medicación habitual según expediente (si aplica)"],
 }
@@ -325,7 +308,6 @@ def render_report(idx_limit:int, rules):
     box("Historia de la enfermedad actual (HPI)", facts["HPI"])
     box("Antecedentes relevantes (EHR)", facts["Historia clínica relevante"])
 
-    # Medicaciones
     st.markdown('<div class="box">', unsafe_allow_html=True)
     st.markdown("**Medicaciones (EHR y entrevista):**")
     meds_items = []
@@ -336,12 +318,10 @@ def render_report(idx_limit:int, rules):
     st.markdown("<ul>"+ "".join(meds_items) +"</ul>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Hechos útiles
     utiles = facts["Signos autonómicos"] + facts["Signos oculares"] + facts["Historia dirigida"]
     if utiles:
         box("Hechos útiles", utiles)
 
-    # Faltantes (solo al final)
     if idx_limit >= len(rules):
         st.markdown('<div class="box note">', unsafe_allow_html=True)
         st.markdown("**Qué no se cubrió pero sería útil:**")
@@ -352,7 +332,7 @@ def render_report(idx_limit:int, rules):
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================
-# SIDEBAR CONTROLS
+# SIDEBAR (flujo)
 # =========================
 st.sidebar.markdown("### Flujo")
 st.sidebar.caption("1) Paciente y condición → 2) Introducción → 3) Entrevista y reporte.")
@@ -430,11 +410,11 @@ elif st.session_state.step == "intro":
 # STEP: CONVERSACIÓN + REPORTE
 # =========================
 elif st.session_state.step == "convo":
-    chat, rules, faltantes = get_condition_script(st.session_state.sel_condition)
+    chat, rules, _faltantes = get_condition_script(st.session_state.sel_condition)
 
     top_l, top_r = st.columns([2.5, 1.5], gap="large")
     with top_l:
-        step_title("Entrevista simulada", "Audio opcional (si lo agregas)")
+        step_title("Entrevista simulada", "Mensajes paso a paso")
     with top_r:
         a, b, c3 = st.columns(3)
         with a:
@@ -453,39 +433,24 @@ elif st.session_state.step == "convo":
 
     st.markdown('<hr class="section"/>', unsafe_allow_html=True)
 
-    # Audio opcional
-    up, url = st.columns([1.4, 2.6], gap="large")
-    with up:
-        f = st.file_uploader("Sube audio (.mp3/.wav) opcional", type=["mp3","wav"])
-        if f: st.audio(f)
-    with url:
-        st.session_state.audio_url = st.text_input("…o pega URL de audio (opcional)", value=st.session_state.audio_url)
-        if st.session_state.audio_url: st.audio(st.session_state.audio_url)
-
-    st.markdown('<hr class="section"/>', unsafe_allow_html=True)
-
-    # Layout principal
     chat_col, report_col = st.columns([1.3, 1.0], gap="large")
 
     # CHAT
     with chat_col:
         st.markdown('<div class="chatwrap">', unsafe_allow_html=True)
 
-        # avanzar un mensaje manual/auto
         if st.session_state.chat_idx < len(chat) - 1:
             if not st.session_state.autoplay:
                 if st.button("Siguiente mensaje ▶", use_container_width=True, key="next"):
                     st.session_state.chat_idx += 1
                     st.rerun()
             else:
-                # Auto avance con delay sin loops atascados
                 time.sleep(1.0)
                 st.session_state.chat_idx += 1
                 st.rerun()
         else:
             st.success("Entrevista completa. El reporte está consolidado.")
 
-        # render mensajes hasta el índice actual
         for i in range(st.session_state.chat_idx + 1):
             role = chat[i]["role"]
             txt = chat[i]["text"]
