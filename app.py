@@ -516,3 +516,402 @@ elif st.session_state.step == "intro":
         )
 
 st.markdown("<div class='footer-note'>Interfaz profesional y moderna — color equilibrado y rendimiento fluido.</div>", unsafe_allow_html=True)
+# ─────────────────────────────────────────────────────────────────────────────
+# PARTE 2/2 — Conversación guiada + Reporte + Exportación
+# Estética profesional, rendimiento fluido, sin filtros.
+# ─────────────────────────────────────────────────────────────────────────────
+
+import time
+from typing import List, Tuple, Dict
+
+# Habilita el botón "Iniciar entrevista" definido en la PARTE 1
+st.session_state.convo_enabled = True
+
+# ----------------------------------------------------------------------------- 
+# Guiones de entrevista (una lista de turnos) y reglas para componer el reporte
+# -----------------------------------------------------------------------------
+Turn = Tuple[str, str]         # ("agent"|"patient", "texto")
+Rule = Tuple[int, str, str]    # (idx_turno_alcanzado, "Sección", "Hecho")
+
+def script_serotonin() -> Tuple[List[Turn], List[Rule], List[str]]:
+    chat: List[Turn] = [
+        ("agent","Gracias por tu tiempo. Para anticipar la consulta, te haré preguntas breves. ¿Cuál es tu principal molestia hoy?"),
+        ("patient","Me siento muy inquieto, sudo mucho y noto mis pupilas grandes."),
+        ("agent","¿Desde cuándo empezó y cómo fue el inicio?"),
+        ("patient","Comenzó hace dos días de manera súbita."),
+        ("agent","¿Has tenido fiebre, escalofríos, rigidez o temblores?"),
+        ("patient","Fiebre no estoy seguro, pero sí escalofríos y rigidez."),
+        ("agent","¿Notas movimientos oculares extraños o visión borrosa?"),
+        ("patient","A veces siento los ojos como temblorosos y la luz me molesta."),
+        ("agent","¿Tomaste o ajustaste medicamentos recientemente, incluyendo jarabes para la tos o suplementos?"),
+        ("patient","Uso fluoxetina diario y ayer tomé un antitusivo con dextrometorfano."),
+        ("agent","¿Has consumido alcohol, estimulantes o drogas recreativas en los últimos días?"),
+        ("patient","No, no he consumido nada de eso."),
+        ("agent","¿Tienes náusea, diarrea o vómito?"),
+        ("patient","Náusea leve. Ni diarrea ni vómito."),
+        ("agent","¿Cómo dormiste estas noches?"),
+        ("patient","Dormí poco y me noté inquieto."),
+        ("agent","¿Has tenido dolores de cabeza, rigidez marcada o espasmos musculares?"),
+        ("patient","Sí, sobre todo rigidez en piernas."),
+        ("agent","¿Cambiaste dosis de la fluoxetina o agregaste otro medicamento recetado?"),
+        ("patient","No cambié dosis. Solo el jarabe."),
+        ("agent","Voy a compilar un resumen para tu médico. Si algo es inexacto, avísame."),
+    ]
+    rules: List[Rule] = [
+        (1, "Motivo principal", "Inquietud, diaforesis y midriasis."),
+        (3, "HPI", "Inicio súbito hace ~2 días."),
+        (5, "Signos autonómicos", "Escalofríos y rigidez."),
+        (7, "Signos oculares", "Molestia a la luz; sensación de movimientos oculares."),
+        (9, "Medicaciones (EHR)", "Fluoxetina (ISRS) — uso crónico."),
+        (9, "Medicaciones (entrevista)", "Dextrometorfano — uso reciente."),
+        (11, "Historia dirigida", "Niega alcohol y estimulantes recientes."),
+        (13, "HPI", "Náusea leve, sin diarrea ni vómito."),
+        (15, "HPI", "Insomnio e inquietud."),
+        (17, "Historia dirigida", "Rigidez en piernas."),
+        (19, "Historia dirigida", "Sin cambio de dosis del ISRS."),
+    ]
+    faltantes: List[str] = [
+        "Signos vitales objetivos: temperatura, FC, TA y SatO₂.",
+        "Exploración neuromuscular dirigida: hiperreflexia, clonus, tono.",
+        "Cronología/dosis exacta de cada fármaco (ISRS/OTC) y tiempos.",
+        "Descartar otras causas de agitación (intoxicación, abstinencia).",
+    ]
+    return chat, rules, faltantes
+
+def script_migraine() -> Tuple[List[Turn], List[Rule], List[str]]:
+    chat: List[Turn] = [
+        ("agent","Vamos a caracterizar tu dolor de cabeza para orientar el manejo. ¿Cómo describirías el dolor y dónde se localiza?"),
+        ("patient","Es pulsátil y se concentra del lado derecho."),
+        ("agent","¿Empezó cuándo y cuánto dura cada episodio?"),
+        ("patient","Ayer por la tarde y dura varias horas."),
+        ("agent","¿La luz o el sonido empeoran? ¿Náusea o vómito?"),
+        ("patient","La luz y el ruido empeoran. Náusea leve, sin vómito."),
+        ("agent","¿Antes de que empiece notas aura visual u hormigueo?"),
+        ("patient","A veces veo destellos antes del dolor."),
+        ("agent","¿Dormiste menos, ayunaste o consumiste cafeína tarde?"),
+        ("patient","Dormí poco y tomé café por la noche."),
+        ("agent","¿Qué analgésicos has usado y qué tanto ayudan?"),
+        ("patient","Ibuprofeno; alivia parcialmente."),
+        ("agent","¿Hay antecedentes familiares de migraña?"),
+        ("patient","Sí, mi madre."),
+        ("agent","¿El dolor te limita actividades o trabajo?"),
+        ("patient","Sí, me cuesta concentrarme."),
+        ("agent","Con esto armaré un resumen para tu médico."),
+    ]
+    rules: List[Rule] = [
+        (1, "Motivo principal", "Cefalea pulsátil lateralizada."),
+        (3, "HPI", "Inicio ayer; crisis por horas."),
+        (5, "HPI", "Fotofobia y fonofobia; náusea leve."),
+        (7, "Historia dirigida", "Aura visual ocasional."),
+        (9, "Historia dirigida", "Privación de sueño y cafeína tardía."),
+        (11, "Medicaciones (entrevista)", "Ibuprofeno PRN con respuesta parcial."),
+        (13, "Antecedentes familiares", "Madre con migraña."),
+        (15, "Limitación funcional", "Impacto en concentración y actividades."),
+    ]
+    faltantes: List[str] = [
+        "Frecuencia mensual de los episodios y escala de dolor.",
+        "Pruebas de ‘red flags’: inicio en trueno, fiebre, déficit neurológico.",
+        "Uso previo de triptanos y eficacia.",
+        "Desencadenantes personales (estrés, ciclo, ayuno, olores).",
+    ]
+    return chat, rules, faltantes
+
+def script_flu() -> Tuple[List[Turn], List[Rule], List[str]]:
+    chat: List[Turn] = [
+        ("agent","Voy a registrar síntomas respiratorios para orientar la visita. ¿Has tenido fiebre y dolor corporal?"),
+        ("patient","Sí, fiebre y el cuerpo cortado."),
+        ("agent","¿Tos o congestión? ¿Desde cuándo?"),
+        ("patient","Tos seca hace tres días y nariz tapada."),
+        ("agent","¿Dificultad para respirar o dolor en el pecho?"),
+        ("patient","No, solo cansancio."),
+        ("agent","¿Tomaste algún medicamento?"),
+        ("patient","Paracetamol y un antigripal."),
+        ("agent","¿Contacto con personas enfermas o vacunación reciente?"),
+        ("patient","Mi pareja tuvo gripe; me vacuné hace 8 meses."),
+        ("agent","¿Antecedentes o factores de riesgo (asma, embarazo, inmunosupresión)?"),
+        ("patient","No."),
+        ("agent","Gracias, prepararé un resumen."),
+    ]
+    rules: List[Rule] = [
+        (1, "Motivo principal", "Fiebre, mialgia y malestar."),
+        (3, "HPI", "Tos seca y congestión de 3 días."),
+        (5, "HPI", "Sin disnea ni dolor torácico."),
+        (7, "Medicaciones (entrevista)", "Paracetamol + antigripal."),
+        (9, "Historia dirigida", "Contacto positivo; vacunación hace 8 meses."),
+        (11, "Factores de riesgo", "Niega comorbilidades relevantes."),
+    ]
+    faltantes: List[str] = [
+        "Temperatura y saturación de O₂.",
+        "Criterios de prueba diagnóstica según guía local.",
+        "Indicaciones de alarma y aislamiento domiciliario.",
+    ]
+    return chat, rules, faltantes
+
+def script_malaria() -> Tuple[List[Turn], List[Rule], List[str]]:
+    chat: List[Turn] = [
+        ("agent","Quiero documentar el patrón febril para orientar estudios. ¿La fiebre es intermitente con escalofríos?"),
+        ("patient","Sí, sube y baja con sudoración."),
+        ("agent","¿Has viajado a zona endémica recientemente?"),
+        ("patient","Sí, estuve en selva hace dos semanas."),
+        ("agent","¿Tienes cefalea, náusea o dolor muscular?"),
+        ("patient","Cefalea y cuerpo cortado."),
+        ("agent","¿Tomaste profilaxis antipalúdica?"),
+        ("patient","No."),
+        ("agent","¿Notas coloración amarillenta en piel u ojos, orina oscura o dolor en costado?"),
+        ("patient","No lo he notado."),
+        ("agent","Perfecto, armaré un resumen para tu médico."),
+    ]
+    rules: List[Rule] = [
+        (1, "Motivo principal", "Fiebre intermitente con escalofríos y sudoración."),
+        (3, "HPI", "Viaje a zona endémica hace 2 semanas."),
+        (5, "HPI", "Cefalea y mialgias."),
+        (7, "Historia dirigida", "Sin profilaxis."),
+        (9, "Historia dirigida", "Niega ictericia u orina oscura."),
+    ]
+    faltantes: List[str] = [
+        "Prueba rápida/frotis y gota gruesa para confirmar.",
+        "Patrón horario de la fiebre y respuesta a antipiréticos.",
+        "Exploración de anemia y esplenomegalia.",
+    ]
+    return chat, rules, faltantes
+
+SCRIPTS: Dict[str, callable] = {
+    "ss": script_serotonin,
+    "mig": script_migraine,
+    "flu": script_flu,
+    "mal": script_malaria,
+}
+
+# ----------------------------------------------------------------------------- 
+# Construcción del reporte a partir de reglas
+# -----------------------------------------------------------------------------
+EHR_SEED = {
+    "Antecedentes (EHR)": ["Antecedente crónico declarado en ficha del paciente"],
+    "Medicaciones (EHR)": ["Medicación habitual según expediente (si aplica)"],
+}
+
+SECTION_ORDER = [
+    "Motivo principal",
+    "HPI",
+    "Antecedentes (EHR)",
+    "Medicaciones (EHR)",
+    "Medicaciones (entrevista)",
+    "Signos autonómicos",
+    "Signos oculares",
+    "Historia dirigida",
+    "Antecedentes familiares",
+    "Factores de riesgo",
+    "Limitación funcional",
+    "Hechos útiles",
+]
+
+def seed_facts() -> Dict[str, List[str]]:
+    facts: Dict[str, List[str]] = {k: [] for k in SECTION_ORDER}
+    for k, arr in EHR_SEED.items():
+        if k in facts:
+            facts[k] = arr.copy()
+    return facts
+
+def facts_up_to(idx_limit: int, rules: List[Rule]) -> Dict[str, List[str]]:
+    facts = seed_facts()
+    for i_lim, section, text in rules:
+        if idx_limit >= i_lim:
+            facts.setdefault(section, []).append(text)
+    # Consolidar "Hechos útiles" desde secciones orientadas a datos puntuales
+    utiles = []
+    for sec in ("Signos autonómicos","Signos oculares","Historia dirigida","Factores de riesgo","Limitación funcional"):
+        utiles += facts.get(sec, [])
+    if utiles:
+        facts["Hechos útiles"] = utiles
+    return facts
+
+def render_box(title_txt: str, items: List[str] | str):
+    st.markdown('<div class="card" style="margin-bottom:10px">', unsafe_allow_html=True)
+    st.markdown(f"**{title_txt}:**", unsafe_allow_html=True)
+    if isinstance(items, list):
+        if items:
+            st.markdown("<ul>" + "".join([f"<li>{st.session_state.get('•','•')} {x}</li>" for x in items]) + "</ul>", unsafe_allow_html=True)
+        else:
+            st.markdown("—", unsafe_allow_html=True)
+    else:
+        st.markdown(items or "—", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def compose_markdown(idx_limit: int, rules: List[Rule], p_name: str, c_title: str) -> str:
+    facts = facts_up_to(idx_limit, rules)
+    out: List[str] = []
+    out.append("# Reporte de Preconsulta\n")
+    out.append(f"**Paciente:** {p_name}  \n**Condición:** {c_title}\n")
+    motivo = facts["Motivo principal"][0] if facts["Motivo principal"] else "—"
+    out.append(f"**Motivo principal:** {motivo}\n")
+    def section_md(name: str):
+        arr = facts.get(name, [])
+        if not arr: return [f"- —"]
+        return [f"- {x}" for x in arr]
+    out.append("## Historia de la enfermedad actual (HPI)")
+    out += section_md("HPI")
+    out.append("\n## Antecedentes (EHR)")
+    out += section_md("Antecedentes (EHR)")
+    out.append("\n## Medicaciones")
+    meds = []
+    for m in facts.get("Medicaciones (EHR)", []): meds.append(f"- {m}")
+    for m in facts.get("Medicaciones (entrevista)", []): meds.append(f"- **{m}**")
+    out += meds if meds else ["- —"]
+    utiles = facts.get("Hechos útiles", [])
+    if utiles:
+        out.append("\n## Hechos útiles")
+        out += [f"- {x}" for x in utiles]
+    return "\n".join(out)
+
+def render_report(idx_limit: int, rules: List[Rule], faltantes: List[str]):
+    fx = facts_up_to(idx_limit, rules)
+    render_box("Motivo principal", (fx["Motivo principal"][0] if fx["Motivo principal"] else "—"))
+    render_box("Historia de la enfermedad actual (HPI)", fx["HPI"])
+    render_box("Antecedentes (EHR)", fx["Antecedentes (EHR)"])
+    st.markdown('<div class="card" style="margin-bottom:10px">', unsafe_allow_html=True)
+    st.markdown("**Medicaciones (EHR y entrevista):**", unsafe_allow_html=True)
+    meds = [f"<li>{m}</li>" for m in fx["Medicaciones (EHR)"]]
+    meds += [f"<li><span class='badge'>{m}</span></li>" for m in fx["Medicaciones (entrevista)"]]
+    st.markdown("<ul>"+ "".join(meds) +"</ul>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+    utiles = fx.get("Hechos útiles", [])
+    if utiles:
+        render_box("Hechos útiles", utiles)
+    if idx_limit >= len(rules):
+        st.markdown('<div class="card" style="border:1px solid rgba(245, 158, 11, .35); background: color-mix(in oklab, var(--bg-card) 90%, #F59E0B 10%);">', unsafe_allow_html=True)
+        st.markdown("**Checklist sugerida para completar en la consulta:**", unsafe_allow_html=True)
+        for x in faltantes:
+            st.markdown(f"- {x}", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# ----------------------------------------------------------------------------- 
+# Animación de tipeo y utilidades de ritmo
+# -----------------------------------------------------------------------------
+def typewriter(ph, text: str, speed: float):
+    if not st.session_state.anim_on:
+        ph.markdown(text, unsafe_allow_html=True)
+        return
+    buf = ""
+    for ch in text:
+        buf += ch
+        ph.markdown(buf, unsafe_allow_html=True)
+        time.sleep(max(0.001, speed))
+
+def timestamp() -> str:
+    return datetime.now().strftime('%H:%M') if st.session_state.show_timestamps else ""
+
+def render_message(role: str, text: str):
+    who = "Asistente" if role == "agent" else "Paciente"
+    klass = "agent" if role == "agent" else "patient"
+    st.markdown(f"<div class='msg {klass}'><b>{who}:</b> {text}" + (f"<br><small>{timestamp()}</small>" if timestamp() else "") + "</div>", unsafe_allow_html=True)
+
+def render_typing(role: str) -> st.delta_generator.DeltaGenerator:
+    who = "Asistente" if role == "agent" else "Paciente"
+    klass = "agent" if role == "agent" else "patient"
+    st.markdown(f"<div class='msg {klass}'><b>{who}:</b> ", unsafe_allow_html=True)
+    ph = st.empty()
+    if timestamp():
+        st.markdown(f"<br><small>{timestamp()}</small></div>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"</div>", unsafe_allow_html=True)
+    return ph
+
+# ----------------------------------------------------------------------------- 
+# Vista de conversación
+# -----------------------------------------------------------------------------
+if st.session_state.step == "convo":
+    p = next(x for x in PACIENTES if x.pid == st.session_state.sel_patient)
+    c = next(x for x in CONDICIONES if x.cid == st.session_state.sel_condition)
+    chat, rules, faltantes = SCRIPTS[st.session_state.sel_condition]()
+    total_turns = len(chat)
+
+    headL, headR = st.columns([2.8, 1.2], gap="large")
+    with headL:
+        title("Entrevista guiada", "Mensajes automáticos con pausas naturales")
+    with headR:
+        cols = st.columns(3)
+        with cols[0]:
+            if st.button("◀ Volver", use_container_width=True):
+                st.session_state.step = "intro"; st.rerun()
+        with cols[1]:
+            if st.button("🔁 Reiniciar", use_container_width=True):
+                st.session_state.chat_idx = -1; st.session_state.pause = False; st.rerun()
+        with cols[2]:
+            if not st.session_state.pause:
+                if st.button("⏸ Pausa", use_container_width=True):
+                    st.session_state.pause = True; st.rerun()
+            else:
+                if st.button("▶ Reanudar", use_container_width=True):
+                    st.session_state.pause = False; st.rerun()
+
+    done = max(0, st.session_state.chat_idx + 1)
+    pct = int(100 * done / total_turns)
+    pcol, ccol = st.columns([0.72, 0.28])
+    with pcol:
+        st.progress(pct, text=f"Progreso: {pct}%")
+    with ccol:
+        st.markdown(
+            f"<div class='kpis' style='justify-content:flex-end'>"
+            f"<span class='badge'>Paciente: {p.nombre}</span>"
+            f"<span class='badge'>Condición: {c.titulo}</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown('<hr class="sep">', unsafe_allow_html=True)
+
+    chat_col, rep_col = st.columns([1.45, 0.95], gap="large")
+
+    with chat_col:
+        st.markdown('<div class="chatwrap">', unsafe_allow_html=True)
+
+        # Mensajes ya emitidos
+        for i in range(st.session_state.chat_idx + 1):
+            role, txt = chat[i]
+            render_message(role, txt)
+
+        # Próximo mensaje con pausas y tipeo
+        next_idx = st.session_state.chat_idx + 1
+        if next_idx < total_turns:
+            role, txt = chat[next_idx]
+            if not st.session_state.pause:
+                if role == "patient":
+                    time.sleep(max(0.0, st.session_state.patient_thinking_delay))
+                ph = render_typing(role)
+                speed = st.session_state.agent_typing_speed if role == "agent" else st.session_state.patient_typing_speed
+                typewriter(ph, txt, speed)
+                st.session_state.chat_idx = next_idx
+                time.sleep(0.06)
+                st.rerun()
+            else:
+                who = "Asistente" if role == "agent" else "Paciente"
+                klass = "agent" if role == "agent" else "patient"
+                st.markdown(f"<div class='msg {klass}'><b>{who}:</b> <span class='small'>[Pausado]</span></div>", unsafe_allow_html=True)
+        else:
+            st.success("Entrevista completa. El reporte quedó consolidado.")
+            st.markdown("<div class='kpis'><span class='badge'>Resumen listo</span><span class='badge'>Revisa faltantes</span></div>", unsafe_allow_html=True)
+            st.balloons()
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with rep_col:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        title("Reporte generado", f"Paciente: {p.nombre} • Condición: {c.titulo}")
+        render_report(st.session_state.chat_idx, rules, faltantes)
+        md = compose_markdown(st.session_state.chat_idx, rules, p.nombre, c.titulo)
+        st.download_button("⬇️ Exportar (.md)", data=md.encode("utf-8"), file_name=f"reporte_{p.pid}_{c.cid}.md", mime="text/markdown", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('<hr class="sep">', unsafe_allow_html=True)
+
+    with st.expander("Notas rápidas y recomendaciones"):
+        st.markdown("""
+- El reporte se forma con Motivo, HPI, antecedentes, medicaciones y hechos útiles.
+- La checklist al final sugiere información clínica a completar durante la consulta.
+- Ajusta pausas y velocidades desde la barra lateral para un ritmo más natural.
+- Mantuvimos una estética sobria y moderna para uso profesional.
+""")
+
+# ----------------------------------------------------------------------------- 
+# Fin de la Parte 2/2
+# -----------------------------------------------------------------------------
